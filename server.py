@@ -295,6 +295,7 @@ async def render(job: str = Form(...), words: str = Form(...), template: str = F
                  uppercase: str = Form("false"), maxchars: str = Form("22"),
                  oneword: str = Form("false"), trkind: str = Form("fade"),
                  trscope: str = Form("line"), trdir: str = Form("out"),
+                 wordpop: str = Form("1.0"), wordbounce: str = Form("pop"),
                  outheight: str = Form("1080"), outquality: str = Form("high")):
     jd = job_dir(job)
     if not TEMPLATE_ID.match(template or ""):
@@ -337,6 +338,8 @@ async def render(job: str = Form(...), words: str = Form(...), template: str = F
             "outline": num(outline, 0, 20, 5), "posYPct": num(posy, 5, 95, 46),
             "uppercase": uppercase == "true", "oneWord": oneword == "true",
             "maxCharsPerLine": int(num(maxchars, 6, 60, 22)),
+            "wordPop": num(wordpop, 0, 3.0, 1.0),
+            "wordBounce": wordbounce if wordbounce in ("pop", "jump", "none") else "pop",
         },
     }
     props["export"] = {
