@@ -89,6 +89,27 @@
   .words .addw{ background:transparent; border:1px dashed var(--line); color:var(--dim); border-radius:5px; padding:3px 9px; font-size:11.5px; }
   .words .addw:hover{ border-color:var(--accent); color:var(--accent); }
 
+  /* ---- user saved presets ---- */
+  .presets-section{ padding:12px 14px; border-bottom:1px solid var(--line); background:var(--panel); }
+  .presets-header{ display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; gap:8px; }
+  .presets-title{ display:flex; align-items:center; gap:6px; font-size:11px; font-weight:700; color:var(--ink); text-transform:uppercase; letter-spacing:.08em; }
+  .preset-badge{ background:var(--panel2); border:1px solid var(--line); color:var(--dim); font-size:10px; padding:1px 6px; border-radius:10px; }
+  .btn-preset-add{ background:var(--accent); color:#1a0d08; border:0; border-radius:6px; padding:5px 10px; font-size:11px; font-weight:700; cursor:pointer; transition:.15s; }
+  .btn-preset-add:hover{ opacity:.9; }
+  .presets-list{ display:flex; flex-direction:column; gap:8px; max-height:280px; overflow-y:auto; padding-right:2px; }
+  .presets-empty{ padding:16px 12px; border:1.5px dashed var(--line); border-radius:8px; text-align:center; color:var(--dim); font-size:11.5px; line-height:1.5; background:var(--panel2); }
+  .pcard{ border:1px solid var(--line); border-radius:8px; background:var(--panel2); overflow:hidden; cursor:pointer; transition:.15s; }
+  .pcard:hover{ border-color:var(--accent); }
+  .pcard.on{ border-color:var(--ok); box-shadow:0 0 0 1px var(--ok); }
+  .phead{ display:flex; align-items:center; justify-content:space-between; padding:7px 11px; font-size:11.5px; font-weight:700; background:rgba(0,0,0,.25); border-bottom:1px solid var(--line); }
+  .phead .pinfo{ display:flex; align-items:baseline; gap:6px; min-width:0; overflow:hidden; }
+  .phead .pname{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:180px; color:var(--ink); }
+  .phead small{ color:var(--dim); font-weight:500; font-size:10px; }
+  .phead .pdel{ background:none; border:0; color:var(--dim); cursor:pointer; font-size:13px; padding:2px 6px; border-radius:4px; line-height:1; }
+  .phead .pdel:hover{ color:#ff7a7a; background:rgba(255,100,100,.15); }
+  .pprev{ background:#0a0c10; padding:14px 10px; min-height:68px; display:flex; align-items:center; justify-content:center; overflow:hidden; cursor:pointer; }
+  .tsearch-label{ font-size:10.5px; text-transform:uppercase; letter-spacing:.12em; color:var(--dim); margin-bottom:6px; font-weight:600; }
+
   /* ---- template gallery ---- */
   .tsearch{ padding:11px 12px 4px; position:sticky; top:0; background:var(--panel); z-index:2; }
   .tsearch input{ width:100%; background:var(--bg); border:1px solid var(--line); border-radius:8px; padding:8px 10px; font-size:12.5px; }
@@ -246,7 +267,22 @@
 
     <!-- ================= TEMPLATES ================= -->
     <div class="pane" id="pane-tpl" hidden>
-      <div class="tsearch"><input id="tsearch" placeholder="Find a template"></div>
+      <div class="presets-section">
+        <div class="presets-header">
+          <div class="presets-title">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="#ff5c39"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+            <span>Saved Presets</span>
+            <span class="preset-badge" id="presetBadge">0</span>
+          </div>
+          <button class="btn-preset-add" id="saveCurrentPresetBtn" title="Save current style and colors as a new preset">+ Save Current</button>
+        </div>
+        <div id="presetsList" class="presets-list"></div>
+      </div>
+
+      <div class="tsearch">
+        <div class="tsearch-label">All Templates</div>
+        <input id="tsearch" placeholder="Find a template">
+      </div>
       <div class="gallery" id="gallery"></div>
     </div>
 
@@ -407,6 +443,7 @@ function openEditor(){
 
   if (!restorePreset()) applyTemplateDefaults(S.template);   // first run: use the template's own look
   buildTabs();
+  renderUserPresets();
   buildGallery();
   buildTransitions();
   bindControls();
@@ -429,11 +466,18 @@ function buildTabs(){
 // uses — so a card is a true preview of the export.
 const PREVIEW = ["The quick", "brown", "fox"];
 
-function cardPreview(key){
+function cardPreview(key, customStyle = null){
   const def = TPL()[key] || {};
-  const st = { color: def.color, accent: def.accent || def.color,
-               outline: def.outline ?? 4, uppercase: !!def.caps };
-  const ff    = CS.fontFamily(def.font);
+  const isSelected = key === S.template;
+  const activeStyle = customStyle || (isSelected ? S.style : null);
+  const st = {
+    color: activeStyle?.color || def.color,
+    accent: activeStyle?.accent || def.accent || def.color,
+    outline: activeStyle?.outline ?? def.outline ?? 4,
+    uppercase: activeStyle?.uppercase ?? !!def.caps,
+    font: activeStyle?.font || def.font,
+  };
+  const ff    = CS.fontFamily(st.font);
   const ffAct = def.act && def.act.font ? CS.fontFamily(def.act.font) : ff;
 
   const wrap = document.createElement("div");
@@ -446,8 +490,6 @@ function cardPreview(key){
     const sp = document.createElement("span");
     const css = CS.wordCss(def, st, { active, passed: i === 0, line: i, ff, ffAct });
     Object.assign(sp.style, css);
-    // wordCss already gives splash templates their own line at real size;
-    // the smaller emphasis scales are a transform in the video, so fake them here
     const sc = active && def.act && def.act.scale;
     if (sc && sc < 1.6) sp.style.transform = `scale(${sc})`;
     sp.textContent = txt;
@@ -487,9 +529,10 @@ $("#gallery").addEventListener("click", e => {
   if (e.target.closest("[data-reset]")) { applyTemplateDefaults(S.template); push(); buildGallery(); savePresetQuiet(); return; }
   const card = e.target.closest(".tcard"); if (!card) return;
   if (card.dataset.t !== S.template) {
+    activePresetId = null;
     S.template = card.dataset.t;
     applyTemplateDefaults(S.template);
-    push(); savePresetQuiet(); buildGallery();
+    push(); savePresetQuiet(); buildGallery(); renderUserPresets();
     const el = $(`.tcard[data-t="${S.template}"]`); if (el) el.scrollIntoView({block:"nearest"});
   }
 });
@@ -500,6 +543,7 @@ $("#gallery").addEventListener("input", e => {
   syncVals(); push(); savePresetQuiet();
   const c = $(`.tcard[data-t="${S.template}"] .tprev`);
   if (c) { c.innerHTML = ""; c.appendChild(cardPreview(S.template)); }
+  renderUserPresets();
 });
 
 /* ================= transitions ================= */
@@ -555,10 +599,10 @@ function applyTemplateDefaults(t){
 function bindControls(){
   const map = { size:"fontSizePct", outline:"outline", posy:"posYPct", maxchars:"maxCharsPerLine" };
   Object.keys(map).forEach(id => $("#"+id).addEventListener("input", ()=>{ S.style[map[id]] = +$("#"+id).value; syncVals(); push(); savePresetQuiet(); }));
-  ["color","accent"].forEach(id => $("#"+id).addEventListener("input", ()=>{ S.style[id]=$("#"+id).value; push(); savePresetQuiet(); buildGallery(); }));
-  $("#font").addEventListener("change", ()=>{ S.style.font=$("#font").value; push(); savePresetQuiet(); });
+  ["color","accent"].forEach(id => $("#"+id).addEventListener("input", ()=>{ S.style[id]=$("#"+id).value; push(); savePresetQuiet(); buildGallery(); renderUserPresets(); }));
+  $("#font").addEventListener("change", ()=>{ S.style.font=$("#font").value; push(); savePresetQuiet(); buildGallery(); renderUserPresets(); });
   $("#caps").addEventListener("click", e=>{ const b=e.target.closest("button"); if(!b) return;
-    S.style.uppercase = b.dataset.v==="true"; segOn("#caps", b); push(); savePresetQuiet(); });
+    S.style.uppercase = b.dataset.v==="true"; segOn("#caps", b); push(); savePresetQuiet(); buildGallery(); renderUserPresets(); });
   $("#grp").addEventListener("click", e=>{ const b=e.target.closest("button"); if(!b) return;
     S.oneWord = S.style.oneWord = b.dataset.v==="word"; segOn("#grp", b); push(); savePresetQuiet(); });
   $("#pos").addEventListener("click", e=>{ const b=e.target.closest("button"); if(!b) return;
@@ -573,7 +617,13 @@ function bindControls(){
   $("#outh").addEventListener("click", e=>{ const b=e.target.closest("button"); if(b) segOn("#outh", b); });
   $("#outq").addEventListener("click", e=>{ const b=e.target.closest("button"); if(b) segOn("#outq", b); });
   $("#bulkApply").addEventListener("click", applyBulk);
-  $("#savePreset").addEventListener("click", ()=>{ savePresetQuiet(); $("#savePreset").textContent="saved ✓"; setTimeout(()=>$("#savePreset").textContent="save preset",1200); });
+  $("#savePreset").addEventListener("click", ()=>{
+    saveCurrentUserPreset();
+    $("#savePreset").textContent="saved ✓";
+    setTimeout(()=>$("#savePreset").textContent="save preset",1200);
+  });
+  const saveCurBtn = $("#saveCurrentPresetBtn");
+  if (saveCurBtn) saveCurBtn.addEventListener("click", () => saveCurrentUserPreset());
   $("#export").addEventListener("click", doExport);
 }
 function segOn(sel, btn){ if(!btn) return; [...$(sel).children].forEach(x=>x.classList.toggle("on", x===btn)); }
@@ -700,9 +750,132 @@ async function resync(){
   b.disabled = false; b.textContent = was;
 }
 
-// ---- presets ----
+// ---- user presets & persistence ----
 const PK = "capstudio.preset4";
-function savePresetQuiet(){ try{ localStorage.setItem(PK, JSON.stringify({ template:S.template, oneWord:S.oneWord, style:S.style, transition:S.transition })); }catch(e){} }
+const UPK = "capstudio.user_presets_list";
+let activePresetId = null;
+
+function getUserPresets(){
+  try { return JSON.parse(localStorage.getItem(UPK) || "[]"); }
+  catch(e){ return []; }
+}
+
+function saveUserPresetsList(list){
+  try { localStorage.setItem(UPK, JSON.stringify(list)); }
+  catch(e){}
+}
+
+function saveCurrentUserPreset(customName){
+  const tplName = (TD()[S.template]?.name || S.template);
+  const defaultName = customName || `${tplName} (${(S.style.accent || "").toUpperCase()})`;
+  const name = prompt("Name your preset:", defaultName);
+  if (name === null) return;
+  const finalName = name.trim() || defaultName;
+
+  const presets = getUserPresets();
+  const newPreset = {
+    id: "up_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6),
+    name: finalName,
+    template: S.template,
+    style: JSON.parse(JSON.stringify(S.style)),
+    transition: JSON.parse(JSON.stringify(S.transition)),
+    oneWord: !!S.oneWord,
+    createdAt: new Date().toISOString(),
+  };
+  presets.unshift(newPreset);
+  saveUserPresetsList(presets);
+  activePresetId = newPreset.id;
+  renderUserPresets();
+  savePresetQuiet();
+  return newPreset;
+}
+
+function deleteUserPreset(id, e){
+  if (e) e.stopPropagation();
+  const presets = getUserPresets().filter(p => p.id !== id);
+  saveUserPresetsList(presets);
+  if (activePresetId === id) activePresetId = null;
+  renderUserPresets();
+}
+
+function applyUserPreset(id){
+  const presets = getUserPresets();
+  const p = presets.find(x => x.id === id);
+  if (!p) return;
+  activePresetId = id;
+  S.template = p.template;
+  S.style = { ...S.style, ...p.style };
+  if (p.transition) S.transition = { ...S.transition, ...p.transition };
+  if (p.oneWord != null) { S.oneWord = p.oneWord; S.style.oneWord = p.oneWord; }
+
+  syncVals();
+  push();
+  savePresetQuiet();
+  buildGallery();
+  renderUserPresets();
+}
+
+function renderUserPresets(){
+  const listEl = $("#presetsList");
+  const badge = $("#presetBadge");
+  if (!listEl) return;
+  const presets = getUserPresets();
+  if (badge) badge.textContent = presets.length;
+
+  if (presets.length === 0) {
+    listEl.innerHTML = `
+      <div class="presets-empty">
+        No custom presets saved yet.<br>
+        Click <b>+ Save Current</b> to save your customized look!
+      </div>
+    `;
+    return;
+  }
+
+  listEl.innerHTML = "";
+  presets.forEach(p => {
+    const card = document.createElement("div");
+    card.className = "pcard" + (p.id === activePresetId ? " on" : "");
+    card.dataset.id = p.id;
+    const baseTplName = TD()[p.template]?.name || p.template;
+
+    card.innerHTML = `
+      <div class="phead">
+        <div class="pinfo">
+          <span class="pname" title="${p.name}">${p.name}</span>
+          <small>· ${baseTplName}</small>
+        </div>
+        <button class="pdel" title="Delete preset" data-del="${p.id}">✕</button>
+      </div>
+      <div class="pprev"></div>
+    `;
+    card.querySelector(".pprev").appendChild(cardPreview(p.template, p.style));
+    card.addEventListener("click", (e) => {
+      if (e.target.closest(".pdel")) return;
+      applyUserPreset(p.id);
+    });
+    const delBtn = card.querySelector(".pdel");
+    if (delBtn) {
+      delBtn.addEventListener("click", (e) => {
+        deleteUserPreset(p.id, e);
+      });
+    }
+    listEl.appendChild(card);
+  });
+}
+
+function savePresetQuiet(){
+  try{
+    localStorage.setItem(PK, JSON.stringify({
+      template: S.template,
+      oneWord: S.oneWord,
+      style: S.style,
+      transition: S.transition,
+      activePresetId: activePresetId,
+    }));
+  }catch(e){}
+}
+
 function restorePreset(){
   try{
     const o = JSON.parse(localStorage.getItem(PK)||"{}");
@@ -711,6 +884,7 @@ function restorePreset(){
     if (o.template && TPL()[o.template]) S.template = o.template;
     if (o.transition) S.transition = { ...S.transition, ...o.transition };
     if (o.oneWord!=null){ S.oneWord = o.oneWord; S.style.oneWord = o.oneWord; }
+    if (o.activePresetId) activePresetId = o.activePresetId;
     return true;
   }catch(e){ return false; }
 }
