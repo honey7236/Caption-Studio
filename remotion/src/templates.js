@@ -278,9 +278,13 @@ export function wordCss(def, st, o = {}) {
   // ---- base fill: gradient / outline-fill / cycling colour / plain ----
   if (def.grad && !(on && a.grad)) {
     let baseGrad = def.grad;
-    if (isCustomColor || (isCustomAccent && def.grad.length === 3)) {
-      if (def.grad.length === 3) {
+    if (def.hint === "fill" || def.name === "Gradient") {
+      if (isCustomColor || isCustomAccent) {
         baseGrad = [def.grad[0], color, accent];
+      }
+    } else if (isCustomColor) {
+      if (def.grad.length === 3) {
+        baseGrad = [def.grad[0], color, darkenHex(color, 35)];
       } else {
         baseGrad = [
           def.grad[0],
@@ -354,7 +358,11 @@ export function wordCss(def, st, o = {}) {
     if (a.grad) {
       let actGrad = a.grad;
       if (isCustomAccent) {
-        actGrad = [a.grad[0], darkenHex(accent, 15), accent, lightenHex(accent, 20), accent];
+        if (a.grad.length === 3) {
+          actGrad = [a.grad[0], accent, darkenHex(accent, 35)];
+        } else {
+          actGrad = [a.grad[0], darkenHex(accent, 15), accent, lightenHex(accent, 20), accent];
+        }
       }
       Object.assign(s, asGradient(actGrad));
     } else if (a.bg) {
