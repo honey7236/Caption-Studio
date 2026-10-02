@@ -242,6 +242,14 @@
         <div class="row"><label>Caps</label>
           <div class="seg" id="caps"><button data-v="false" class="on">Aa</button><button data-v="true">AA</button></div>
         </div>
+        <div class="row"><label>Word Pop</label>
+          <div class="seg" id="popStyle">
+            <button data-v="pop" class="on">Pop</button>
+            <button data-v="jump">Bounce</button>
+            <button data-v="none">Off</button>
+          </div>
+        </div>
+        <div class="row"><label>Pop Scale</label><input type="range" id="popIntensity" min="0" max="2.5" step="0.1" value="1.0"><span class="val" id="popIntensityV">1.0×</span></div>
       </div>
 
       <div class="sec">
@@ -329,7 +337,7 @@
   </aside>
 </main>
 
-<script src="/static/player.js"></script>
+<script src="/static/player.js?v=2.3"></script>
 <script>
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
@@ -432,7 +440,8 @@ const S = {
   template: "kalakar", oneWord: false,
   transition: { kind:"fade", scope:"line", dir:"out" },
   style: { font:"Inter", fontSizePct:3.0, color:"#ffffff", accent:"#c8ff00",
-           outline:2, posYPct:46, uppercase:false, oneWord:false, maxCharsPerLine:26 },
+           outline:2, posYPct:46, uppercase:false, oneWord:false, maxCharsPerLine:26,
+           wordPop:1.0, wordBounce:"pop" },
 };
 
 function openEditor(){
@@ -476,6 +485,8 @@ function cardPreview(key, customStyle = null){
     outline: activeStyle?.outline ?? def.outline ?? 4,
     uppercase: activeStyle?.uppercase ?? !!def.caps,
     font: activeStyle?.font || def.font,
+    wordPop: activeStyle?.wordPop != null ? activeStyle.wordPop : 1.0,
+    wordBounce: activeStyle?.wordBounce || "pop",
   };
   const ff    = CS.fontFamily(st.font);
   const ffAct = def.act && def.act.font ? CS.fontFamily(def.act.font) : ff;
@@ -491,7 +502,11 @@ function cardPreview(key, customStyle = null){
     const css = CS.wordCss(def, st, { active, passed: i === 0, line: i, ff, ffAct });
     Object.assign(sp.style, css);
     const sc = active && def.act && def.act.scale;
-    if (sc && sc < 1.6) sp.style.transform = `scale(${sc})`;
+    if (sc && sc < 1.6) {
+      const pMult = st.wordPop != null ? st.wordPop : 1.0;
+      const effSc = st.wordBounce === "none" ? 1.0 : (1 + (sc - 1) * pMult);
+      if (effSc !== 1) sp.style.transform = `scale(${effSc.toFixed(3)})`;
+    }
     sp.textContent = txt;
     wrap.appendChild(sp);
   });
@@ -607,6 +622,21 @@ function bindControls(){
     S.oneWord = S.style.oneWord = b.dataset.v==="word"; segOn("#grp", b); push(); savePresetQuiet(); });
   $("#pos").addEventListener("click", e=>{ const b=e.target.closest("button"); if(!b) return;
     S.style.posYPct = +b.dataset.y; segOn("#pos", b); syncVals(); push(); savePresetQuiet(); });
+  $("#popIntensity").addEventListener("input", ()=>{
+    const val = +$("#popIntensity").value;
+    S.style.wordPop = val;
+    if (val === 0) S.style.wordBounce = "none";
+    else if (S.style.wordBounce === "none") S.style.wordBounce = "pop";
+    syncVals(); push(); savePresetQuiet();
+  });
+  $("#popStyle").addEventListener("click", e=>{
+    const b = e.target.closest("button"); if (!b) return;
+    const v = b.dataset.v;
+    S.style.wordBounce = v;
+    if (v === "none") S.style.wordPop = 0;
+    else if (!S.style.wordPop || S.style.wordPop === 0) S.style.wordPop = 1.0;
+    syncVals(); push(); savePresetQuiet();
+  });
   $("#bulkBtn").addEventListener("click", ()=>{
     const w = $("#bulkWrap");
     w.hidden = !w.hidden;
@@ -639,6 +669,11 @@ function syncVals(){
   [...$("#caps").children].forEach(x=>x.classList.toggle("on",(x.dataset.v==="true")===S.style.uppercase));
   [...$("#grp").children].forEach(x=>x.classList.toggle("on",(x.dataset.v==="word")===S.oneWord));
   [...$("#pos").children].forEach(x=>x.classList.toggle("on", +x.dataset.y===Math.round(S.style.posYPct)));
+  const wp = S.style.wordPop != null ? S.style.wordPop : 1.0;
+  const wb = S.style.wordBounce || (wp === 0 ? "none" : "pop");
+  $("#popIntensity").value = wp;
+  $("#popIntensityV").textContent = wp === 0 ? "Off" : wp.toFixed(1) + "×";
+  [...$("#popStyle").children].forEach(x=>x.classList.toggle("on", x.dataset.v === wb));
 }
 
 function push(){ CS.update({ words: WORDS, template: S.template, style: { ...S.style }, transition: { ...S.transition } }); }
@@ -919,6 +954,8 @@ async function doExport(){
   fd.append("outline", S.style.outline);
   fd.append("posy", S.style.posYPct);
   fd.append("uppercase", String(S.style.uppercase));
+  fd.append("wordpop", S.style.wordPop != null ? String(S.style.wordPop) : "1.0");
+  fd.append("wordbounce", S.style.wordBounce || "pop");
   fd.append("oneword", String(S.oneWord));
   fd.append("maxchars", S.style.maxCharsPerLine);
   fd.append("outheight", $("#outh .on")?.dataset.v || "1080");

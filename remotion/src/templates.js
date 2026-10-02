@@ -234,28 +234,6 @@ const asGradient = (g) => ({
   color: "transparent",
 });
 
-function buildBaseGradient(gradDef, baseColor, accentColor, defColor, defAccent) {
-  if (!gradDef || !Array.isArray(gradDef) || gradDef.length < 2) return null;
-  const angle = gradDef[0];
-  const stops = gradDef.slice(1);
-  if (stops.length === 2) {
-    return [angle, baseColor, accentColor];
-  }
-  const userChanged = (baseColor && defColor && baseColor.toLowerCase() !== defColor.toLowerCase()) ||
-                      (accentColor && defAccent && accentColor.toLowerCase() !== defAccent.toLowerCase());
-  if (userChanged) {
-    return [
-      angle,
-      darkenHex(baseColor, 18),
-      darkenHex(baseColor, 8),
-      baseColor,
-      lightenHex(baseColor, 15),
-      lightenHex(baseColor, 25),
-    ];
-  }
-  return gradDef;
-}
-
 /**
  * CSS for one caption word.
  *   def  — a TPL entry
@@ -272,9 +250,14 @@ export function wordCss(def, st, o = {}) {
   const caps = st.uppercase || def.caps || (on && a.caps);
   const idle = def.idle || {};
 
+  const isCustomColor = !!(def.color && color.toLowerCase() !== def.color.toLowerCase());
+  const isCustomAccent = !!(def.accent && accent.toLowerCase() !== def.accent.toLowerCase());
+
   const s = {
     display: "inline-block",
     position: "relative",
+    // constant padding on EVERY word — the active highlight only swaps colours,
+    // so a line can never reflow / jump when the box moves.
     margin: "0.06em 0.05em",
     padding: "0.05em 0.16em",
     borderRadius: `${(on && a.radius) || 0.12}em`,
@@ -294,10 +277,23 @@ export function wordCss(def, st, o = {}) {
 
   // ---- base fill: gradient / outline-fill / cycling colour / plain ----
   if (def.grad && !(on && a.grad)) {
-    const bgGrad = buildBaseGradient(def.grad, color, accent, def.color, def.accent);
-    if (bgGrad) Object.assign(s, asGradient(bgGrad));
+    let baseGrad = def.grad;
+    if (isCustomColor || (isCustomAccent && def.grad.length === 3)) {
+      if (def.grad.length === 3) {
+        baseGrad = [def.grad[0], color, accent];
+      } else {
+        baseGrad = [
+          def.grad[0],
+          darkenHex(color, 24),
+          darkenHex(color, 12),
+          color,
+          lightenHex(color, 14),
+        ];
+      }
+    }
+    Object.assign(s, asGradient(baseGrad));
   }
-  if (def.fill) {
+  if (def.fill) {                                    // "Open" — outline until spoken
     const filled = active || passed;
     s.color = filled ? accent : "transparent";
     s.WebkitTextStroke = `0.028em ${accent}`;
@@ -305,7 +301,7 @@ export function wordCss(def, st, o = {}) {
   }
   if (def.cycle) {
     const P = ["#22D3EE", "#FACC15", "#22C55E", "#F472B6", "#A855F7"];
-    s.color = active ? (st.accent && st.accent.toLowerCase() !== (def.accent || "").toLowerCase() ? accent : P[line % P.length]) : color;
+    s.color = active ? (isCustomAccent ? accent : (st.accent && line === -1 ? st.accent : P[line % P.length])) : color;
     s.WebkitTextFillColor = s.color;
   }
   if (def.altLine && line % 2 === 1) {
@@ -321,9 +317,12 @@ export function wordCss(def, st, o = {}) {
   }
 
   // ---- shadows / glow ----
-  const grads = !!(def.grad || (on && a.grad));
-  const dropC = (def.dropColor && def.dropColor.startsWith("rgba")) ? def.dropColor : accent;
-  const glowC = accent;
+  // A gradient fill means the text itself is transparent, so a text-shadow
+  // would show straight THROUGH the glyphs. Those templates get the same look
+  // via filter: drop-shadow(), which acts on the painted (clipped) pixels.
+  const grads = !!((def.grad && !(on && !a.grad)) || (on && a.grad));
+  const dropC = def.dropColor || (grads ? "rgba(0,0,0,.55)" : (isCustomAccent ? accent : (def.accent || accent)));
+  const glowC = isCustomAccent ? accent : (def.accent || accent);
   const glowN = (on && a.glow) || def.glow || 0;
 
   if (grads) {
@@ -344,6 +343,7 @@ export function wordCss(def, st, o = {}) {
   // ---- active word ----
   if (on) {
     if (a.scale && isSplash(def)) {
+      // real layout, not a transform: own line, own size, nothing overlaps
       s.fontSize = `${a.scale}em`;
       s.display = "block";
       s.width = "fit-content";
@@ -352,22 +352,28 @@ export function wordCss(def, st, o = {}) {
       s.lineHeight = 1.0;
     }
     if (a.grad) {
-      const userChangedAccent = accent && def.accent && accent.toLowerCase() !== def.accent.toLowerCase();
-      const g = userChangedAccent
-        ? [a.grad[0], darkenHex(accent, 15), accent, lightenHex(accent, 20), accent]
-        : a.grad;
-      Object.assign(s, asGradient(g));
+      let actGrad = a.grad;
+      if (isCustomAccent) {
+        actGrad = [a.grad[0], darkenHex(accent, 15), accent, lightenHex(accent, 20), accent];
+      }
+      Object.assign(s, asGradient(actGrad));
     } else if (a.bg) {
       s.background = accent;
-      s.color = (a.color && a.color !== "#ACCENT" && a.color !== def.accent) ? a.color : (isLightColor(accent) ? "#0C0C0C" : "#FFFFFF");
+      s.backgroundImage = "none";
+      s.WebkitBackgroundClip = "border-box";
+      s.backgroundClip = "border-box";
+      const fg = isLightColor(accent) ? "#0C0C0C" : "#FFFFFF";
+      s.color = (a.color && a.color !== "#ACCENT" && !isCustomAccent) ? a.color : fg;
       s.WebkitTextFillColor = s.color;
       s.textShadow = "none";
       s.WebkitTextStroke = "0";
-      s.backgroundImage = "none";
     } else {
-      s.color = accent;
-      s.WebkitTextFillColor = accent;
+      const actColor = (a.color && a.color !== "#ACCENT" && !isCustomAccent) ? a.color : accent;
+      s.color = actColor;
+      s.WebkitTextFillColor = actColor;
       s.backgroundImage = "none";
+      s.WebkitBackgroundClip = "border-box";
+      s.backgroundClip = "border-box";
     }
     if (a.underline) s.boxShadow = `inset 0 -0.08em 0 ${accent}`;
   }
@@ -384,9 +390,10 @@ export function lineCss(def, st) {
   const b = def.lineBg;
   if (!b) return s;
   const accent = st?.accent || def.accent || "#ff5c39";
-  const bgCol = (b.color === "#ACCENT" || b.color === def.accent)
+  const userChangedAccent = !!(def.accent && st?.accent && st.accent.toLowerCase() !== def.accent.toLowerCase());
+  const bgCol = (b.color === "#ACCENT")
     ? accent
-    : (st?.accent && def.accent && st.accent.toLowerCase() !== def.accent.toLowerCase() ? st.accent : b.color);
+    : (userChangedAccent ? accent : b.color);
   Object.assign(s, {
     display: "inline-block",
     background: bgCol,

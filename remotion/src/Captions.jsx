@@ -29,6 +29,7 @@ export const DEFAULT_PROPS = {
   style: {
     font: "Montserrat", fontSizePct: 5.0, color: "#FFFFFF", accent: "#FFFFFF",
     outline: 5, posYPct: 46, uppercase: false, oneWord: false, maxCharsPerLine: 22,
+    wordPop: 1.0, wordBounce: "pop",
   },
 };
 
@@ -64,6 +65,10 @@ function Word({ w, i, activeIdx, emphIdx, splash, lineStart, def, st, ff, ffAct,
   const on = splash ? i === emphIdx : active;
   const css = wordCss(def, st, { active: on, passed, line: lineIndex, ff, ffAct });
 
+  // Customizable Word Pop / Bounce controls
+  const popMult = st.wordPop != null ? Number(st.wordPop) : 1.0;
+  const bounceStyle = st.wordBounce || (popMult === 0 ? "none" : "pop");
+
   // ---- entrance ----
   // Only animate per word where it's deliberate: the bouncy templates, or when
   // the user picked Word scope in Transitions. Otherwise the line comes in as
@@ -75,7 +80,9 @@ function Word({ w, i, activeIdx, emphIdx, splash, lineStart, def, st, ff, ffAct,
   if (trans.scope === "word" && trans.kind !== "none") {
     anim = transStyle(trans.kind, trans.dir, t);
   } else if (def.enter === "pop") {
-    anim = { opacity: t, transform: `translateY(${(1 - t) * 0.16}em) scale(${0.88 + 0.12 * t})` };
+    const psc = 0.12 * (bounceStyle === "none" ? 0 : popMult);
+    const py = 0.16 * (bounceStyle === "none" ? 0 : popMult);
+    anim = { opacity: t, transform: `translateY(${(1 - t) * py}em) scale(${(1 - psc) + psc * t})` };
   } else if (def.enter === "drop") {
     anim = { opacity: t, transform: `translateY(${(t - 1) * 0.34}em)` };
   }
@@ -89,11 +96,26 @@ function Word({ w, i, activeIdx, emphIdx, splash, lineStart, def, st, ff, ffAct,
     // brightens and gives a small kick the moment it is actually spoken
     const lit = active || passed ? 1 : 0.62;
     anim.opacity = (anim.opacity ?? 1) * lit;
-    if (active) anim.transform = `${anim.transform || ""} scale(${(1 + 0.05 * hit).toFixed(3)})`.trim();
-  } else if (!splash && active && a.scale) {
-    const sc = 1 + (a.scale - 1) * (0.85 + 0.15 * hit);
-    anim.transform = `${anim.transform || ""} scale(${sc.toFixed(3)})`.trim();
-    anim.transformOrigin = i === 0 ? "left center" : "center center";
+    const splashKick = bounceStyle === "none" ? 0 : 0.05 * popMult;
+    if (active && splashKick > 0) {
+      anim.transform = `${anim.transform || ""} scale(${(1 + splashKick * hit).toFixed(3)})`.trim();
+    }
+  } else if (!splash && active) {
+    const hasScale = Boolean(a.scale);
+    const baseInc = hasScale ? (a.scale - 1) : 0.08;
+    const effectiveInc = bounceStyle === "none" ? 0 : baseInc * popMult;
+
+    if (effectiveInc > 0 || bounceStyle === "jump") {
+      const sc = 1 + effectiveInc * (0.82 + 0.18 * hit);
+      const hopY = bounceStyle === "jump" ? -0.14 * (1 - hit) * Math.max(0.6, popMult) : 0;
+      const tf = [
+        hopY ? `translateY(${hopY.toFixed(3)}em)` : "",
+        `scale(${sc.toFixed(3)})`,
+      ].filter(Boolean).join(" ");
+
+      anim.transform = `${anim.transform || ""} ${tf}`.trim();
+      anim.transformOrigin = i === 0 ? "left center" : "center center";
+    }
   }
 
   if (def.pulse) {
