@@ -1,0 +1,12 @@
+.venv/
+.remotion/
+__pycache__/
+remotion/node_modules/
+remotion/.bundle/
+remotion/public/*.mp4
+work/*
+out/*
+runtime-path.txt
+.setup-complete
+*.words.json
+*.ass
